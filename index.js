@@ -8,6 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { google } = require('googleapis');
 const chrono = require('chrono-node');
+const speech = require('@google-cloud/speech');
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -46,6 +47,40 @@ function crearOAuthClient() {
   return new google.auth.OAuth2(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI);
 }
 
+// --- Cliente de Google Speech-to-Text (para entender audios) ---
+function crearSpeechClient() {
+  const keysJson = process.env.GOOGLE_SPEECH_CREDENTIALS_JSON;
+  if (!keysJson) return null;
+  try {
+    const keys = JSON.parse(keysJson);
+    return new speech.SpeechClient({
+      credentials: {
+        client_email: keys.client_email,
+        private_key: keys.private_key,
+      },
+      projectId: keys.project_id,
+    });
+  } catch (e) {
+    console.error('GOOGLE_SPEECH_CREDENTIALS_JSON inválido:', e);
+    return null;
+  }
+}
+
+const speechClient = crearSpeechClient();
+
+async function transcribirAudio(buffer) {
+  const [response] = await speechClient.recognize({
+    audio: { content: buffer.toString('base64') },
+    config: {
+      encoding: 'OGG_OPUS',
+      sampleRateHertz: 48000,
+      languageCode: 'es-PE',
+    },
+  });
+  if (!response.results || response.results.length === 0) return '';
+  return response.results.map((r) => r.alternatives[0].transcript).join(' ').trim();
+}
+
 const bot = new Telegraf(BOT_TOKEN);
 
 // --- Comando /start ---
@@ -78,11 +113,8 @@ bot.command('conectar', (ctx) => {
   );
 });
 
-// --- Cualquier otro mensaje de texto: lo interpretamos como recordatorio ---
-bot.on('text', async (ctx) => {
-  const chatId = String(ctx.chat.id);
-  const texto = ctx.message.text;
-
+// --- Lógica compartida: convierte un texto en un evento de Calendar ---
+async function procesarRecordatorio(ctx, chatId, texto) {
   const tokens = obtenerTokens(chatId);
   if (!tokens) {
     return ctx.reply('Primero conecta tu Google Calendar con /conectar 🙂');
@@ -132,6 +164,49 @@ bot.on('text', async (ctx) => {
   } catch (err) {
     console.error('Error creando evento:', err);
     ctx.reply('Hubo un problema agendando eso. Intenta conectar de nuevo con /conectar');
+  }
+}
+
+// --- Mensajes de texto: se procesan directo ---
+bot.on('text', async (ctx) => {
+  const chatId = String(ctx.chat.id);
+  const texto = ctx.message.text;
+  await procesarRecordatorio(ctx, chatId, texto);
+});
+
+// --- Mensajes de voz: primero se transcriben, luego se procesan igual ---
+bot.on('voice', async (ctx) => {
+  const chatId = String(ctx.chat.id);
+
+  if (!speechClient) {
+    return ctx.reply('El reconocimiento de audio todavía no está configurado. Escríbeme el recordatorio en texto por ahora 🙂');
+  }
+
+  const tokens = obtenerTokens(chatId);
+  if (!tokens) {
+    return ctx.reply('Primero conecta tu Google Calendar con /conectar 🙂');
+  }
+
+  try {
+    await ctx.reply('🎙️ Escuchando tu audio...');
+
+    const fileId = ctx.message.voice.file_id;
+    const fileLink = await ctx.telegram.getFileLink(fileId);
+    const respuesta = await fetch(fileLink.href);
+    const arrayBuffer = await respuesta.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const texto = await transcribirAudio(buffer);
+
+    if (!texto) {
+      return ctx.reply('No logré entender el audio 😅 Intenta de nuevo o escríbelo en texto.');
+    }
+
+    await ctx.reply(`Escuché: "${texto}"`);
+    await procesarRecordatorio(ctx, chatId, texto);
+  } catch (err) {
+    console.error('Error procesando audio:', err);
+    ctx.reply('Hubo un problema procesando tu audio. Intenta de nuevo.');
   }
 });
 
