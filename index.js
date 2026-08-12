@@ -141,7 +141,40 @@ console.log('Bot iniciado correctamente...');
 // --- Servidor web: health check + callback de Google OAuth ---
 const app = express();
 
-app.get('/', (req, res) => res.send('El bot de recordatorios está corriendo ✅'));
+app.get('/', (req, res) => {
+  res.send(`
+    <html>
+      <head><title>Bot Recordatorios</title></head>
+      <body style="font-family: sans-serif; max-width: 600px; margin: 40px auto; line-height: 1.6;">
+        <h1>Bot Recordatorios</h1>
+        <p>Bot Recordatorios es un bot de Telegram que permite a cualquier persona escribir un recordatorio en lenguaje natural (por ejemplo: "el lunes a las 5pm ir al concierto") y crearlo automáticamente como un evento en su propio Google Calendar.</p>
+        <p>El bot solo crea eventos en el calendario del usuario que se conecta voluntariamente con su cuenta de Google. No comparte, vende ni usa los datos del calendario para ningún otro fin.</p>
+        <p>Puedes usar el bot buscando <b>@Gus_Recordatorio_bot</b> en Telegram.</p>
+        <p><a href="/privacy">Política de privacidad</a></p>
+      </body>
+    </html>
+  `);
+});
+
+app.get('/privacy', (req, res) => {
+  res.send(`
+    <html>
+      <head><title>Política de Privacidad - Bot Recordatorios</title></head>
+      <body style="font-family: sans-serif; max-width: 600px; margin: 40px auto; line-height: 1.6;">
+        <h1>Política de Privacidad</h1>
+        <p>Bot Recordatorios ("el bot") es una herramienta gratuita de Telegram que ayuda a los usuarios a crear recordatorios en su propio Google Calendar.</p>
+        <h2>Qué datos usamos</h2>
+        <p>Cuando un usuario conecta su cuenta de Google mediante el comando /conectar, el bot solicita permiso únicamente para crear eventos en su Google Calendar (alcance "calendar.events"). El bot no lee, modifica ni elimina otros eventos existentes, y no accede a ninguna otra información de la cuenta de Google del usuario.</p>
+        <h2>Cómo usamos los datos</h2>
+        <p>El token de acceso de Google del usuario se guarda únicamente para poder crear los eventos que el propio usuario solicita por Telegram. Este token no se comparte, vende ni transfiere a terceros bajo ninguna circunstancia.</p>
+        <h2>Cómo eliminar tus datos</h2>
+        <p>Un usuario puede revocar el acceso del bot en cualquier momento desde <a href="https://myaccount.google.com/permissions" target="_blank">la configuración de su cuenta de Google</a>, o escribiéndole al administrador del bot para solicitar la eliminación de sus datos guardados.</p>
+        <h2>Contacto</h2>
+        <p>Para dudas sobre esta política, contacta al administrador del bot a través de Telegram.</p>
+      </body>
+    </html>
+  `);
+});
 
 app.get('/oauth2callback', async (req, res) => {
   const { code, state } = req.query;
